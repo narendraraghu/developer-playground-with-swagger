@@ -1,0 +1,30 @@
+{
+  "9124": {
+    "description": "Invalid or missing credentials",
+    "troubleshooting": "Please verify that your userId and password are correct and properly formatted."
+  },
+  "9125": {
+    "description": "Invalid or expired certificate",
+    "troubleshooting": "Check that your SSL certificates are valid and not expired. Ensure proper certificate format."
+  },
+  "9126": {
+    "description": "Invalid request format",
+    "troubleshooting": "Verify that your request payload follows the required format and contains all mandatory fields."
+  },
+  "9127": {
+    "description": "Service temporarily unavailable",
+    "troubleshooting": "The Visa API service is currently experiencing issues. Please try again later."
+  },
+  "9128": {
+    "description": "Rate limit exceeded",
+    "troubleshooting": "You have exceeded the allowed number of requests. Please wait before making additional requests."
+  },
+  "9129": {
+    "description": "Invalid encryption",
+    "troubleshooting": "Check your MLE keys and ensure proper encryption of the payload."
+  },
+  "9208": {
+    "description": "Invalid key ID",
+    "troubleshooting": "Verify that the keyId provided matches your registered key ID."
+  }
+} 

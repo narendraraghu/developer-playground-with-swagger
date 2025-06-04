@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  vdp-app:
+    build: .
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./certificates:/app/server/certificates
+      - ./settings.json:/app/server/settings.json
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - REACT_APP_API_URL=http://localhost:3001
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3 

@@ -1,0 +1,42 @@
+{
+  "9124": {
+    "description": "Invalid or missing credentials",
+    "troubleshooting": "Please verify that your userId and password are correct and properly formatted."
+  },
+  "9125": {
+    "description": "Invalid SSL certificate",
+    "troubleshooting": "Ensure your SSL certificates are valid and properly configured. Check that the certificate files are correctly uploaded in the settings."
+  },
+  "9126": {
+    "description": "Invalid API key",
+    "troubleshooting": "Verify that your API key is correct and has not expired. You can find your API key in the settings section."
+  },
+  "9127": {
+    "description": "Invalid shared secret",
+    "troubleshooting": "Check that your shared secret is correctly entered in the settings. The shared secret is case-sensitive."
+  },
+  "9128": {
+    "description": "Invalid resource path",
+    "troubleshooting": "Ensure the resource path is correctly formatted and points to a valid endpoint."
+  },
+  "9129": {
+    "description": "Proxy configuration error",
+    "troubleshooting": "Verify your proxy settings. Check that the proxy host and port are correct, and if authentication is required, ensure the credentials are valid."
+  },
+  "9130": {
+    "description": "MLE configuration error",
+    "troubleshooting": "Check your Message Level Encryption settings. Ensure the MLE keys are properly uploaded and the Key ID is correct."
+  },
+  "9131": {
+    "description": "Invalid request payload",
+    "troubleshooting": "Review your request payload. Ensure it follows the required format and contains all mandatory fields."
+  },
+  "9132": {
+    "description": "Rate limit exceeded",
+    "troubleshooting": "You have exceeded the API rate limit. Please wait a few minutes before making additional requests."
+  },
+  "9133": {
+    "description": "Service unavailable",
+    "troubleshooting": "The service is temporarily unavailable. Please try again later or check the service status page."
+  }
+} 
