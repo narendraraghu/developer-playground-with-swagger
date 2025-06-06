@@ -1,173 +1,232 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import './App.css';
-import { FaCog, FaPaperPlane, FaCode, FaExchangeAlt, FaList } from 'react-icons/fa';
-import { motion } from 'framer-motion';
-
-// Import the new components
+import ApiPanel from './components/ApiPanel';
 import SettingsPanel from './components/SettingsPanel';
 import CollectionPanel from './components/CollectionPanel';
-import ApiPanel from './components/ApiPanel';
-
-// ErrorDisplay is now used within ApiPanel, no need to import here if it's there
-// import ErrorDisplay from './components/ErrorDisplay';
+import { FaCog, FaList } from 'react-icons/fa';
+import errorMapping from './data/error-mapping.json'; // Import the error mapping
 
 function App() {
-  // Keep top-level state here that controls overall app behavior and is shared
-  const [settingsSaved, setSettingsSaved] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showCollection, setShowCollection] = useState(false);
-
-  // Keep API request/response state here
-  const [apiUrl, setApiUrl] = useState('https://sandbox.api.visa.com/vdp/helloworld');
-  const [method, setMethod] = useState('GET');
-  const [payload, setPayload] = useState('');
-  const [response, setResponse] = useState(null);
-  const [responseHeaders, setResponseHeaders] = useState(null);
   const [error, setError] = useState(null);
+  const [activeApiUrl, setActiveApiUrl] = useState('');
+  const [activeMethod, setActiveMethod] = useState('GET');
+  const [activePayload, setActivePayload] = useState('');
+  const [activeResponse, setActiveResponse] = useState(null);
+  const [activeError, setActiveError] = useState(null);
+  const [settingsSaved, setSettingsSaved] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [mleAvailable, setMleAvailable] = useState(false);
+  const [selectedEnvironment, setSelectedEnvironment] = useState('sandbox');
 
-   // Keep settings state here to be passed to both SettingsPanel and ApiPanel
-   const [settings, setSettings] = useState({
-    userId: '',
-    password: '',
-    sslServerCert: '',
-    sslClientKey: '',
-    keyId: '',
-    mleServerKey: '',
-    mleClientKey: '',
-    useProxy: false,
-    proxyHost: '',
-    proxyPort: '',
-    proxyUsername: '',
-    proxyPassword: ''
-  });
-  const [xpaySettings, setXPaySettings] = useState({
-    apiKey: '',
-    sharedSecret: '',
-    resourcePath: '',
-  });
-  const [authMethod, setAuthMethod] = useState('mutualAuth'); // Default to mutualAuth
-  const [mleAvailable, setMleAvailable] = useState(true);
+  const environments = {
+    sandbox: 'https://sandbox.api.visa.com',
+    certification: 'https://cert.api.visa.com',
+    production: 'https://api.visa.com'
+  };
 
-  // Remove handleFileChange, handleSaveSettings, handleResetSettings - these will be in SettingsPanel
-  // Remove handleMethodChange, handleSubmit - these will be in ApiPanel
-  // Remove handlePostmanUpload, handleRequestSelect, handleRemoveCollection - these will be in CollectionPanel
+  const handleRequestSelect = (request) => {
+    console.log('App.js received request:', request);
+    // Get the base URL from the selected environment
+    const baseUrl = environments[selectedEnvironment];
+    
+    // If the request URL is a relative path, prepend the base URL
+    let fullUrl = request.url;
+    if (request.url && !request.url.startsWith('http')) {
+      fullUrl = `${baseUrl}${request.url.startsWith('/') ? '' : '/'}${request.url}`;
+    }
+    
+    setActiveApiUrl(fullUrl);
+    setActiveMethod(request.method);
+    let payload = '';
+    if (request.body) {
+      try {
+        payload = typeof request.body === 'object' ? JSON.stringify(request.body, null, 2) : String(request.body);
+      } catch (e) {
+        console.error('Error stringifying request body:', e);
+        payload = String(request.body);
+      }
+    }
+    setActivePayload(payload);
+    console.log('App.js activePayload after set:', payload);
 
-  // Add a handler in App.js to receive selected request data from CollectionPanel
-  const handleCollectionRequestSelect = (requestData) => {
-    setApiUrl(requestData.apiUrl);
-    setMethod(requestData.method);
-    setPayload(requestData.payload);
-    // Clear any previous response/error when a new request is selected
-    setResponse(null);
-    setResponseHeaders(null);
+    setActiveResponse(null);
+    setActiveError(null);
     setError(null);
   };
 
-    // Load saved settings on component mount
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const response = await fetch('http://localhost:3001/api/visa/load-settings');
-        const data = await response.json();
-        if (data.settings) {
-          setSettings(data.settings);
-           // Ensure xpaySettings and authMethod are also loaded if saved
-           setXPaySettings(data.xpaySettings || { apiKey: '', sharedSecret: '', resourcePath: '' });
-           setAuthMethod(data.authMethod || 'mutualAuth');
+  const handlePayloadChange = (payload) => {
+    setActivePayload(payload);
+  };
 
-          setSettingsSaved(true);
-        } else {
-             // If no settings are loaded, ensure settingsSaved is false
-            setSettingsSaved(false);
+  const handleSendRequest = async (url, method, payload) => {
+    setLoading(true);
+    setActiveError(null);
+    setActiveResponse(null);
+    setError(null);
+    
+    try {
+      // Proxy the request through our backend server
+      const response = await fetch('http://localhost:3001/api/visa/proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url,
+          method,
+          payload: method !== 'GET' ? payload : undefined
+        })
+      });
+
+      const data = await response.json();
+      
+      // Helper function to handle decryption
+      const decryptResponseData = async (responseData) => {
+        if (responseData?.encData) {
+          console.log('Response is encrypted, attempting decryption...');
+          try {
+            const decryptResponse = await fetch('http://localhost:3001/api/visa/decrypt', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ encryptedData: responseData.encData })
+            });
+
+            const decryptedData = await decryptResponse.json();
+
+            if (!decryptResponse.ok) {
+              throw new Error(decryptedData.details || decryptedData.error || 'Failed to decrypt response');
+            }
+
+            console.log('Decryption successful.', decryptedData);
+            return decryptedData.decryptedData;
+          } catch (decryptError) {
+            console.error('Error during decryption:', decryptError);
+            setError(`Decryption failed: ${decryptError.message}`);
+            setActiveError(`Decryption failed: ${decryptError.message}`);
+            return responseData;
+          }
         }
-        if (data.mleAvailable !== undefined) {
-          setMleAvailable(data.mleAvailable);
-        }
-      } catch (error) {
-        console.error('Error loading settings:', error);
-         setSettingsSaved(false); // Ensure settingsSaved is false on error
+        return responseData;
+      };
+
+      if (!response.ok) {
+        const decryptedData = await decryptResponseData(data.data);
+        
+        // Attempt to extract error code from decrypted data
+        const errorCode = decryptedData?.responseStatus?.code || 
+                          decryptedData?.errorCode || 
+                          decryptedData?.code ||
+                          decryptedData?.details?.responseStatus?.code || 
+                          decryptedData?.details?.code;
+
+        // Look up mapped error details
+        const mappedErrorDetails = errorCode ? errorMapping[errorCode] : null;
+
+        // Set activeError with a more descriptive message including mapped details
+        const errorMsg = data.error || data.details?.error || `Request failed with status ${data.status}.`;
+        let detailedErrorMessage = errorMsg;
+        if (errorCode) detailedErrorMessage += ` Error Code: ${errorCode}.`;
+        if (mappedErrorDetails?.description) detailedErrorMessage += ` Description: ${mappedErrorDetails.description}`; // Add description from mapping
+        
+        setActiveError(detailedErrorMessage);
+        
+        // Set activeResponse with status, headers, and potentially formatted error data
+        setActiveResponse({
+          status: data.status,
+          data: decryptedData, // Keep decrypted data for raw view
+          headers: data.headers,
+          mappedError: mappedErrorDetails, // Pass mapped details to ApiPanel
+          errorCode: errorCode // Pass error code to ApiPanel
+        });
+
+      } else {
+        const decryptedData = await decryptResponseData(data.data);
+        setActiveResponse({
+          status: data.status,
+          data: decryptedData,
+          headers: data.headers
+        });
+        setActiveError(null);
       }
-    };
 
-    loadSettings();
-  }, []); // Empty dependency array means this effect runs only once on mount
-
+    } catch (error) {
+      console.error('Network or unexpected error:', error);
+      setActiveError(error.message || 'An unexpected error occurred.');
+      setActiveResponse(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="App">
       <header className="App-header">
-        <h1>Visa Developer Sandbox Simulator</h1>
+        <h1>Day One Developer Program at Visa</h1>
         <div className="header-buttons">
-          <motion.button
+          <button
             className="settings-toggle"
             onClick={() => setShowSettings(!showSettings)}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
           >
-            <FaCog /> {showSettings ? 'Hide Settings' : 'Show Settings'}
-          </motion.button>
-          <motion.button
+            <FaCog /> Settings
+          </button>
+          <button
             className="collection-toggle"
             onClick={() => setShowCollection(!showCollection)}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
           >
-            <FaList /> {showCollection ? 'Hide Collection' : 'Show Collection'}
-          </motion.button>
+            <FaList /> Collection
+          </button>
         </div>
       </header>
 
       <main className="App-main">
-        {/* Render SettingsPanel */}
-        <SettingsPanel
-          showSettings={showSettings}
-          settings={settings}
-          setSettings={setSettings}
-          xpaySettings={xpaySettings}
-          setXPaySettings={setXPaySettings}
-          authMethod={authMethod}
-          setAuthMethod={setAuthMethod}
-          settingsSaved={settingsSaved}
-          setSettingsSaved={setSettingsSaved}
-          mleAvailable={mleAvailable}
-          setMleAvailable={setMleAvailable}
-          // Pass loading and setError down if needed in Save/Reset handlers
-          loading={loading} // Pass loading state
-          setLoading={setLoading} // Pass setLoading to allow SettingsPanel to indicate saving/resetting is in progress
-          setError={setError} // Pass setError to allow SettingsPanel to display errors
-        />
-
-        <div className="main-container">
-          {/* Render CollectionPanel */}
-          <CollectionPanel
-            showCollection={showCollection}
-            onRequestSelect={handleCollectionRequestSelect} // Pass the handler to update App state
-            setError={setError} // Pass setError to CollectionPanel
-          />
-
-          {/* Render ApiPanel */}
-          <ApiPanel
-            apiUrl={apiUrl}
-            setApiUrl={setApiUrl}
-            method={method}
-            setMethod={setMethod}
-            payload={payload}
-            setPayload={setPayload}
+        {showSettings && (
+          <SettingsPanel
+            showSettings={showSettings}
+            settingsSaved={settingsSaved}
+            setSettingsSaved={setSettingsSaved}
+            mleAvailable={mleAvailable}
+            setMleAvailable={setMleAvailable}
             loading={loading}
             setLoading={setLoading}
-            response={response}
-            setResponse={setResponse}
-            responseHeaders={responseHeaders}
-            setResponseHeaders={setResponseHeaders}
-            error={error}
             setError={setError}
+            setShowSettings={setShowSettings}
+            selectedEnvironment={selectedEnvironment}
+            setSelectedEnvironment={setSelectedEnvironment}
+            environments={environments}
+          />
+        )}
+        
+        <div className="main-container">
+          {showCollection && (
+            <CollectionPanel
+              showCollection={showCollection}
+              onRequestSelect={handleRequestSelect}
+              setError={setError}
+            />
+          )}
+          
+          <ApiPanel
+            activeApiUrl={activeApiUrl}
+            activeMethod={activeMethod}
+            activePayload={activePayload}
+            activeResponse={activeResponse}
+            activeError={activeError}
+            handleSendRequest={handleSendRequest}
+            onPayloadChange={handlePayloadChange}
+            loading={loading}
             settingsSaved={settingsSaved}
-            authMethod={authMethod}
-            settings={settings} // Pass settings state
-            xpaySettings={xpaySettings} // Pass xpaySettings state
           />
         </div>
+        {error && !activeError && (
+           <div className="error-message">
+             <h3>Error</h3>
+             <pre>{error}</pre>
+           </div>
+        )}
       </main>
     </div>
   );

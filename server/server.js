@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
 const { createPublicKey, createPrivateKey } = require('crypto');
+const errorMapping = require('./error-mapping.json');
 
 // Try to load jose module, but don't fail if it's not available
 let jose;
@@ -151,6 +152,40 @@ function createBase64Credentials(userId, password) {
   const credentials = Buffer.from(`${userId}:${password}`).toString('base64');
   console.log('Base64 credentials length:', credentials.length);
   return credentials;
+}
+
+// Helper function to configure HTTPS agent with proxy if enabled
+function createHttpsAgent(settings) {
+  const agentConfig = {
+    cert: settings.sslServerCert,
+    key: settings.sslClientKey,
+    rejectUnauthorized: true,
+    secureProtocol: 'TLSv1_2_method'
+  };
+
+  if (settings.useProxy && settings.proxyHost && settings.proxyPort) {
+    agentConfig.proxy = {
+      host: settings.proxyHost,
+      port: settings.proxyPort,
+      protocol: 'http:', // Use HTTP for proxy connection
+      auth: settings.proxyUsername && settings.proxyPassword ? 
+        `${settings.proxyUsername}:${settings.proxyPassword}` : undefined
+    };
+
+    // Add proxy error handling
+    agentConfig.on('error', (error) => {
+      console.error('Proxy connection error:', error);
+      if (error.code === 'ECONNREFUSED') {
+        throw new Error(`Failed to connect to proxy server at ${settings.proxyHost}:${settings.proxyPort}. Please check if the proxy server is running and accessible.`);
+      } else if (error.code === 'ETIMEDOUT') {
+        throw new Error(`Proxy connection timed out. Please check your proxy server settings and network connection.`);
+      } else {
+        throw new Error(`Proxy error: ${error.message}`);
+      }
+    });
+  }
+
+  return new https.Agent(agentConfig);
 }
 
 // Helper function to encrypt payload using MLE
@@ -329,93 +364,33 @@ app.post('/api/visa/save-settings', (req, res) => {
   }
 });
 
-// Endpoint to make Visa API request
-app.post('/api/visa/transaction', async (req, res) => {
+// Endpoint to make Visa API request (This will be replaced by the proxy endpoint)
+// app.post('/api/visa/transaction', async (req, res) => {
+//   // ... existing transaction endpoint logic ...
+// });
+
+// Add proxy endpoint for API requests
+app.post('/api/visa/proxy', async (req, res) => {
+  console.log('\n=== Incoming Proxy Request ===');
+  console.log('Method:', req.method);
+  console.log('URL:', req.url);
+  console.log('Body:', JSON.stringify(req.body, null, 2));
+
   try {
+    const { url, method, payload, headers: customHeaders = {} } = req.body;
+    
+    // Load settings
     const settings = loadSettings();
     if (!settings) {
       console.error('Settings not found');
-      return res.status(400).json({ error: 'Settings not found. Please save settings first.' });
-    }
-
-    const { payload, apiUrl, method = 'GET' } = req.body;
-    
-    // Validate request
-    console.log('\n=== Request Validation ===');
-    console.log('Method:', method);
-    console.log('API URL:', apiUrl);
-    console.log('Payload:', payload);
-    console.log('Settings:', {
-      userId: settings.userId ? 'Present' : 'Missing',
-      password: settings.password ? 'Present' : 'Missing',
-      keyId: settings.keyId ? 'Present' : 'Missing',
-      sslServerCert: settings.sslServerCert ? 'Present' : 'Missing',
-      sslClientKey: settings.sslClientKey ? 'Present' : 'Missing',
-      mleServerKey: settings.mleServerKey ? 'Present' : 'Missing',
-      mleClientKey: settings.mleClientKey ? 'Present' : 'Missing'
-    });
-
-    if (!apiUrl) {
-      console.error('API URL is missing');
-      return res.status(400).json({ error: 'API URL is required' });
-    }
-
-    if (method === 'POST' && !payload) {
-      console.error('Payload is missing for POST request');
-      return res.status(400).json({ error: 'Payload is required for POST requests' });
+      return res.status(400).json({ error: 'Settings not found. Please configure settings first.' });
     }
 
     // Create base64 credentials
     const credentials = createBase64Credentials(settings.userId, settings.password);
 
-    // Encrypt payload if it's a POST request
-    let requestData = payload;
-    if (method === 'POST') {
-      console.log('\nEncrypting payload...');
-      try {
-        const encryptedPayload = await encryptPayload(payload, settings.mleServerKey, settings.keyId);
-        console.log('Encryption successful');
-        requestData = encryptedPayload;
-      } catch (encryptError) {
-        console.error('Encryption failed:', encryptError);
-        return res.status(500).json({ 
-          error: 'Failed to encrypt payload',
-          details: encryptError.message
-        });
-      }
-    }
-
     // Configure HTTPS agent
-    const httpsAgent = new https.Agent({
-      cert: settings.sslServerCert,
-      key: settings.sslClientKey,
-      rejectUnauthorized: true,
-      secureProtocol: 'TLSv1_2_method'
-    });
-
-    // Configure proxy if enabled
-    let proxyConfig = null;
-    if (settings.useProxy && settings.proxyHost && settings.proxyPort) {
-      proxyConfig = {
-        host: settings.proxyHost,
-        port: settings.proxyPort,
-        protocol: 'http:', // Use HTTP for proxy connection
-        auth: settings.proxyUsername && settings.proxyPassword ? 
-          `${settings.proxyUsername}:${settings.proxyPassword}` : undefined
-      };
-
-      // Add proxy error handling
-      httpsAgent.on('error', (error) => {
-        console.error('Proxy connection error:', error);
-        if (error.code === 'ECONNREFUSED') {
-          throw new Error(`Failed to connect to proxy server at ${settings.proxyHost}:${settings.proxyPort}. Please check if the proxy server is running and accessible.`);
-        } else if (error.code === 'ETIMEDOUT') {
-          throw new Error(`Proxy connection timed out. Please check your proxy server settings and network connection.`);
-        } else {
-          throw new Error(`Proxy error: ${error.message}`);
-        }
-      });
-    }
+    const httpsAgent = createHttpsAgent(settings);
 
     // Prepare request headers
     const requestHeaders = {
@@ -423,52 +398,75 @@ app.post('/api/visa/transaction', async (req, res) => {
       'Content-Type': 'application/json',
       'Authorization': `Basic ${credentials}`,
       'User-Agent': 'Visa API Client',
-      'Host': new URL(apiUrl).host,
-      'keyId': settings.keyId
+      'Host': new URL(url).host,
+      'keyId': settings.keyId,
+      ...customHeaders // Merge custom headers
     };
 
-    console.log('\n=== Request Details ===');
-    console.log('URL:', apiUrl);
+    let requestData = payload; // Start with the raw payload
+
+    // Encrypt payload if it's a POST request and MLE is available and configured
+    if (method.toUpperCase() === 'POST' && jose && settings.mleServerKey && settings.keyId) {
+      console.log('\nAttempting to encrypt payload...');
+      try {
+        requestData = await encryptPayload(payload, settings.mleServerKey, settings.keyId);
+        console.log('Payload encrypted successfully.');
+      } catch (encryptError) {
+        console.error('Payload encryption failed:', encryptError);
+        // Decide how to handle encryption failure: stop or send unencrypted?
+        // For now, we'll stop and return an error.
+        return res.status(500).json({ 
+          error: 'Failed to encrypt payload for POST request',
+          details: encryptError.message
+        });
+      }
+    }
+
+    console.log('\n=== Proxying Request to Visa API ===');
+    console.log('URL:', url);
     console.log('Method:', method);
-    console.log('Headers:', requestHeaders);
-    console.log('Request Data:', requestData);
-    if (proxyConfig) {
-      console.log('Proxy Config:', proxyConfig);
+    console.log('Headers:', requestHeaders); // Log headers being sent
+    console.log('Request Data (after potential encryption):', requestData); // Log payload being sent
+    if (method.toUpperCase() === 'POST' && requestData !== payload) {
+        console.log('Original Payload (before encryption):', payload); // Log original payload if encrypted
     }
 
     try {
       // Make request to Visa API
       const response = await axios({
         method: method.toLowerCase(),
-        url: apiUrl,
+        url: url,
         headers: requestHeaders,
-        data: requestData,
+        data: requestData, // Use the potentially encrypted payload
         httpsAgent,
-        proxy: proxyConfig,
+        proxy: settings.useProxy && settings.proxyHost && settings.proxyPort ? {
+          host: settings.proxyHost,
+          port: settings.proxyPort,
+          protocol: 'http:',
+          auth: settings.proxyUsername && settings.proxyPassword ? 
+            `${settings.proxyUsername}:${settings.proxyPassword}` : undefined
+        } : false,
         timeout: 30000, // 30 second timeout
         validateStatus: function (status) {
           return status >= 200 && status < 500; // Accept all responses between 200 and 499
         }
       });
 
-      console.log('\n=== Visa API Response Details ===');
+      console.log('\n=== Received Response from Visa API ===');
       console.log('Status:', response.status);
-      console.log('Status Text:', response.statusText);
-      console.log('Response Headers:', JSON.stringify(response.headers, null, 2));
-      console.log('Response Data Type:', typeof response.data);
-      console.log('Raw Response Data:', response.data);
-      console.log('================================\n');
+      console.log('Response Headers:', response.headers);
+      console.log('Response Data:', response.data);
 
-      // For 200 responses, return the data as is
-      res.json({
+      // Send the response back to the client
+      res.status(response.status).json({
         status: response.status,
         data: response.data,
         headers: response.headers,
-        isEncrypted: false
+        isEncrypted: !!response.data?.encData // Indicate if response data might be encrypted
       });
 
     } catch (axiosError) {
-      console.error('\n=== Visa API Request Failed ===');
+      console.error('\n=== Visa API Request Failed (Axios Error) ===');
       console.error('Error details:', {
         message: axiosError.message,
         code: axiosError.code,
@@ -478,65 +476,44 @@ app.post('/api/visa/transaction', async (req, res) => {
           headers: axiosError.response.headers
         } : 'No response'
       });
-      
+
       if (axiosError.response) {
-        const errorData = axiosError.response.data;
-        let decryptedData = null;
-
-        // Only attempt decryption if encData is present in error response
-        if (errorData && errorData.encData) {
-          try {
-            decryptedData = await decryptResponse(errorData);
-          } catch (decryptError) {
-            console.error('Failed to decrypt error response:', decryptError);
-          }
-        }
-
-        // Extract error code and get mapped details
-        const errorCode = errorData?.responseStatus?.code || decryptedData?.responseStatus?.code;
-        const errorDetails = errorCode ? getErrorDetails(errorCode) : null;
-
-        // Format the response
-        const formattedResponse = {
+        // Forward the API error response to the client
+        res.status(axiosError.response.status).json({
           error: 'Visa API request failed',
-          details: errorData,
+          details: axiosError.response.data,
           status: axiosError.response.status,
-          data: decryptedData || errorData,
-          decryptedData: decryptedData,
-          isEncrypted: !!errorData.encData,
+          data: axiosError.response.data,
           headers: axiosError.response.headers,
-          errorCode: errorCode,
-          errorMapping: errorDetails
-        };
-
-        return res.status(axiosError.response.status).json(formattedResponse);
+          isEncrypted: !!axiosError.response.data?.encData // Indicate if error data might be encrypted
+        });
       } else if (axiosError.request) {
-        return res.status(500).json({
+        // The request was made but no response was received
+        res.status(500).json({
           error: 'No response received from Visa API',
           details: axiosError.message,
           status: 500,
           data: null,
-          decryptedData: null,
-          isEncrypted: false,
-          headers: null
+          headers: null,
+          isEncrypted: false
         });
       } else {
-        return res.status(500).json({
+        // Error setting up the request
+        res.status(500).json({
           error: 'Error setting up Visa API request',
           details: axiosError.message,
           status: 500,
           data: null,
-          decryptedData: null,
-          isEncrypted: false,
-          headers: null
+          headers: null,
+          isEncrypted: false
         });
       }
     }
   } catch (error) {
-    console.error('\nError in transaction endpoint:', error);
-    res.status(500).json({ 
-      error: error.message,
-      details: error.stack
+    console.error('Error processing proxy request:', error);
+    res.status(500).json({
+      status: 500,
+      error: error.message || 'Internal server error'
     });
   }
 });
@@ -612,6 +589,19 @@ app.post('/api/visa/decrypt', async (req, res) => {
       error: 'Server error',
       details: error.message
     });
+  }
+});
+
+// Add clear settings endpoint
+app.post('/api/visa/clear-settings', (req, res) => {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      fs.unlinkSync(SETTINGS_FILE);
+    }
+    res.json({ success: true, message: 'Settings cleared successfully' });
+  } catch (error) {
+    console.error('Error clearing settings:', error);
+    res.status(500).json({ success: false, message: 'Failed to clear settings', error: error.message });
   }
 });
 

@@ -1,7 +1,7 @@
 {
   "9124": {
-    "description": "Invalid or missing credentials",
-    "troubleshooting": "Please verify that your userId and password are correct and properly formatted."
+    "description": "The credentials provided in the request are incorrect.",
+    "troubleshooting": "Please verify your User ID, Password, and Key ID in the settings panel. Make sure you are using the correct credentials from your Visa Developer account."
   },
   "9125": {
     "description": "Invalid or expired certificate",
@@ -24,7 +24,39 @@
     "troubleshooting": "Check your MLE keys and ensure proper encryption of the payload."
   },
   "9208": {
-    "description": "Invalid key ID",
-    "troubleshooting": "Verify that the keyId provided matches your registered key ID."
+    "description": "The request is missing required authentication credentials.",
+    "troubleshooting": "Please ensure you have saved your settings with valid credentials before making the API request."
+  },
+  "9209": {
+    "description": "The request contains invalid authentication credentials.",
+    "troubleshooting": "Please check your credentials format and ensure they are properly encoded."
+  },
+  "9210": {
+    "description": "The request contains expired authentication credentials.",
+    "troubleshooting": "Please update your credentials as they have expired."
+  },
+  "9211": {
+    "description": "The request contains revoked authentication credentials.",
+    "troubleshooting": "Your credentials have been revoked. Please contact Visa Developer Support."
+  },
+  "9212": {
+    "description": "The request contains invalid signature.",
+    "troubleshooting": "Please verify your signature generation process and ensure all required headers are included."
+  },
+  "9213": {
+    "description": "The request contains invalid certificate.",
+    "troubleshooting": "Please verify your SSL certificate and ensure it is valid and properly configured."
+  },
+  "9214": {
+    "description": "The request contains invalid key.",
+    "troubleshooting": "Please verify your encryption key and ensure it is valid and properly configured."
+  },
+  "9215": {
+    "description": "The request contains invalid token.",
+    "troubleshooting": "Please verify your token and ensure it is valid and not expired."
+  },
+  "9216": {
+    "description": "The request contains invalid scope.",
+    "troubleshooting": "Please verify your API scope and ensure it is properly configured for the requested endpoint."
   }
 } 
