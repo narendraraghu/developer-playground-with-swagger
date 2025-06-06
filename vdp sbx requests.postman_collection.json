@@ -1,0 +1,174 @@
+{
+	"info": {
+		"_postman_id": "59609b65-c1b1-4467-87b4-53f8d5ea7d9d",
+		"name": "vdp sbx requests",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "45392720"
+	},
+	"item": [
+		{
+			"name": "FX",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"initiatingPartyId\": 1002,\n  \"rateProductCode\": \"BANK\",\n  \"destinationCurrencyCode\": \"USD\",\n  \"sourceCurrencyCode\": \"EUR\",\n  \"quoteIdRequired\": true\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://sandbox.api.visa.com/forexrates/v2/foreignexchangerates",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"visa",
+						"com"
+					],
+					"path": [
+						"forexrates",
+						"v2",
+						"foreignexchangerates"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Send Payout",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"recipientDetail\": {\n    \"lastName\": \"smith\",\n    \"firstName\": \"Jessica\",\n    \"bank\": {\n      \"bankCode\": \"800554\",\n      \"bankCodeType\": \"SORT_CODE\",\n      \"accountNumberType\": \"DEFAULT\",\n      \"accountName\": \"Money Market\",\n      \"countryCode\": \"GBR\",\n      \"bankName\": \"Barclays\",\n      \"accountNumber\": \"6970093\",\n      \"currencyCode\": \"GBP\"\n    },\n    \"address\": {\n      \"country\": \"GBR\",\n      \"city\": \"London\",\n      \"postalCode\": \"675456\",\n      \"addressLine1\": \"123 Main St\",\n      \"state\": \"CF\"\n    },\n    \"type\": \"I\"\n  },\n  \"senderDetail\": {\n    \"address\": {\n      \"country\": \"USA\",\n      \"city\": \"Washington\",\n      \"addressLine1\": \"addressline1\"\n    },\n    \"name\": \"Ben\",\n    \"type\": \"C\",\n    \"senderAccountNumber\": \"senderAccountNumber\"\n  },\n  \"payoutMethod\": \"B\",\n  \"transactionDetail\": {\n    \"initiatingPartyId\": 1002,\n    \"businessApplicationId\": \"FD\",\n    \"statementNarrative\": \"advancepayment\",\n    \"transactionAmount\": 1.5,\n    \"transactionCurrencyCode\": \"GBP\",\n    \"settlementCurrencyCode\": \"GBP\",\n    \"clientReferenceId\": \"888852397088\",\n    \"senderSourceOfFunds\": \"01\"\n  }\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://sandbox.api.visa.com/visapayouts/v3/payouts",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"visa",
+						"com"
+					],
+					"path": [
+						"visapayouts",
+						"v3",
+						"payouts"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Validate payout",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"recipientDetail\": {\n    \"lastName\": \"smith\",\n    \"firstName\": \"Jessica\",\n    \"bank\": {\n      \"bankCode\": \"800554\",\n      \"bankCodeType\": \"SORT_CODE\",\n      \"accountNumberType\": \"DEFAULT\",\n      \"accountName\": \"Money Market\",\n      \"countryCode\": \"GBR\",\n      \"bankName\": \"Barclays\",\n      \"accountNumber\": \"6970093\",\n      \"currencyCode\": \"GBP\"\n    },\n    \"address\": {\n      \"country\": \"GBR\",\n      \"city\": \"London\",\n      \"postalCode\": \"675456\",\n      \"addressLine1\": \"123 Main St\",\n      \"state\": \"CF\"\n    },\n    \"type\": \"I\"\n  },\n  \"senderDetail\": {\n    \"address\": {\n      \"country\": \"USA\",\n      \"city\": \"Washington\",\n      \"addressLine1\": \"addressline1\"\n    },\n    \"name\": \"Ben\",\n    \"type\": \"C\",\n    \"senderAccountNumber\": \"senderAccountNumber\"\n  },\n  \"payoutMethod\": \"B\",\n  \"transactionDetail\": {\n    \"initiatingPartyId\": 1002,\n    \"businessApplicationId\": \"FD\",\n    \"statementNarrative\": \"advancepayment\",\n    \"transactionAmount\": 1.5,\n    \"transactionCurrencyCode\": \"GBP\",\n    \"settlementCurrencyCode\": \"GBP\",\n    \"senderSourceOfFunds\": \"01\"\n  }\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://sandbox.api.visa.com/visapayouts/v3/payouts/validate",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"visa",
+						"com"
+					],
+					"path": [
+						"visapayouts",
+						"v3",
+						"payouts",
+						"validate"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "OCT",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"amount\": 124.05,\n  \"senderAddress\": \"901 Metro Center Blvd\",\n  \"localTransactionDateTime\": \"2025-05-27T12:00:00\",\n  \"pointOfServiceData\": {\n    \"panEntryMode\": 90,\n    \"posConditionCode\": \"00\",\n    \"motoECIIndicator\": 0\n  },\n  \"recipientPrimaryAccountNumber\": \"4060320000000127\",\n  \"colombiaNationalServiceData\": {\n    \"addValueTaxReturn\": 10,\n    \"taxAmountConsumption\": 10,\n    \"nationalNetReimbursementFeeBaseAmount\": 20,\n    \"addValueTaxAmount\": 10,\n    \"nationalNetMiscAmount\": 10,\n    \"countryCodeNationalService\": 170,\n    \"nationalChargebackReason\": 11,\n    \"emvTransactionIndicator\": \"1\",\n    \"nationalNetMiscAmountType\": \"A\",\n    \"costTransactionIndicator\": \"0\",\n    \"nationalReimbursementFee\": 20\n  },\n  \"cardAcceptor\": {\n    \"address\": {\n      \"country\": \"USA\",\n      \"zipCode\": \"94404\",\n      \"county\": \"San Mateo\",\n      \"state\": \"CA\"\n    },\n    \"idCode\": \"CA-IDCode-77765\",\n    \"name\": \"Visa Inc. USA-Foster City\",\n    \"terminalId\": \"TID-9999\"\n  },\n  \"senderReference\": \"\",\n  \"transactionIdentifier\": 883916196354773,\n  \"acquirerCountryCode\": 840,\n  \"acquiringBin\": 408999,\n  \"retrievalReferenceNumber\": \"412770452025\",\n  \"senderCity\": \"Foster City\",\n  \"senderStateCode\": \"CA\",\n  \"systemsTraceAuditNumber\": 451018,\n  \"senderName\": \"Mohammed Qasim\",\n  \"businessApplicationId\": \"AA\",\n  \"settlementServiceIndicator\": 9,\n  \"merchantCategoryCode\": 6012,\n  \"transactionCurrencyCode\": \"USD\",\n  \"recipientName\": \"rohan\",\n  \"senderCountryCode\": \"124\",\n  \"sourceOfFundsCode\": \"05\",\n  \"senderAccountNumber\": \"4060320000000126\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://sandbox.api.visa.com/visadirect/fundstransfer/v1/pushfundstransactions",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"visa",
+						"com"
+					],
+					"path": [
+						"visadirect",
+						"fundstransfer",
+						"v1",
+						"pushfundstransactions"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Hello",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"recipientDetail\": {\n    \"lastName\": \"smith\",\n    \"firstName\": \"Jessica\",\n    \"bank\": {\n      \"bankCode\": \"800554\",\n      \"bankCodeType\": \"SORT_CODE\",\n      \"accountNumberType\": \"DEFAULT\",\n      \"accountName\": \"Money Market\",\n      \"countryCode\": \"GBR\",\n      \"bankName\": \"Barclays\",\n      \"accountNumber\": \"6970093\",\n      \"currencyCode\": \"GBP\"\n    },\n    \"address\": {\n      \"country\": \"GBR\",\n      \"city\": \"London\",\n      \"postalCode\": \"675456\",\n      \"addressLine1\": \"123 Main St\",\n      \"state\": \"CF\"\n    },\n    \"type\": \"I\"\n  },\n  \"senderDetail\": {\n    \"address\": {\n      \"country\": \"USA\",\n      \"city\": \"Washington\",\n      \"addressLine1\": \"addressline1\"\n    },\n    \"name\": \"Ben\",\n    \"type\": \"C\",\n    \"senderAccountNumber\": \"senderAccountNumber\"\n  },\n  \"payoutMethod\": \"B\",\n  \"transactionDetail\": {\n    \"initiatingPartyId\": 1002,\n    \"businessApplicationId\": \"FD\",\n    \"statementNarrative\": \"advancepayment\",\n    \"transactionAmount\": 1.5,\n    \"transactionCurrencyCode\": \"GBP\",\n    \"settlementCurrencyCode\": \"GBP\",\n    \"senderSourceOfFunds\": \"01\"\n  }\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://sandbox.api.visa.com/vdp/helloworld",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"api",
+						"visa",
+						"com"
+					],
+					"path": [
+						"vdp",
+						"helloworld"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
