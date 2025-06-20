@@ -162,16 +162,32 @@
     align-items: center;
     justify-content: center;
     text-align: center;
-    padding: 20px;
-    border: 2px dashed #ccc; /* Lighter border */
-    border-radius: 5px;
-    color: #666; /* Darker gray text */
+    padding: 30px 20px;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    color: #666;
+    transition: all 0.2s ease;
+    min-height: 150px;
+}
+
+.upload-container:hover {
+    border-color: #1A1F71;
+    box-shadow: 0 2px 4px rgba(26, 31, 113, 0.1);
 }
 
 .upload-icon {
-    font-size: 3em;
-    margin-bottom: 10px;
-    color: #999; /* Lighter gray icon */
+    font-size: 2.5em;
+    margin-bottom: 15px;
+    color: #1A1F71;
+    opacity: 0.7;
+}
+
+.upload-container p {
+    margin: 0;
+    font-size: 0.95em;
+    color: #666;
+    line-height: 1.4;
 }
 
 /* Method badge colors */

@@ -272,7 +272,7 @@ app.post('/api/visa/transaction', async (req, res) => {
       return res.status(400).json({ error: 'Settings not found. Please save settings first.' });
     }
 
-    const { payload, apiUrl, method = 'GET' } = req.body;
+    const { payload, apiUrl, method = 'GET', authMethod = 'mutualAuth' } = req.body;
     
     if (!apiUrl) {
       return res.status(400).json({ error: 'API URL is required' });
@@ -281,9 +281,6 @@ app.post('/api/visa/transaction', async (req, res) => {
     if (method === 'POST' && !payload) {
       return res.status(400).json({ error: 'Payload is required for POST requests' });
     }
-
-    // Create base64 credentials
-    const credentials = createBase64Credentials(settings.userId, settings.password);
 
     // Encrypt payload if it's a POST request
     let requestData = payload;
@@ -302,21 +299,68 @@ app.post('/api/visa/transaction', async (req, res) => {
     // Configure HTTPS agent with proxy if enabled
     const httpsAgent = createHttpsAgent(settings);
 
-    // Prepare request headers
-    const requestHeaders = {
+    let requestHeaders = {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
-      'Authorization': `Basic ${credentials}`,
       'User-Agent': 'Visa API Client',
       'Host': new URL(apiUrl).host,
       'keyId': settings.keyId
     };
 
+    let finalUrl = apiUrl;
+
+    if (authMethod === 'xpayToken') {
+      // X-Pay-Token Authentication - use API Key and Shared Secret
+      if (!settings.apiKey || !settings.sharedSecret || !settings.resourcePath) {
+        return res.status(400).json({ 
+          error: 'X-Pay-Token Authentication requires API Key, Shared Secret, and Resource Path. Please configure settings first.' 
+        });
+      }
+      // Generate X-Pay-Token according to Visa specifications
+      const timestamp = Math.floor(Date.now() / 1000);
+      const urlObj = new URL(apiUrl);
+      let resourcePath = urlObj.pathname;
+      // For VDP Hello World, skip the /vdp/ context path
+      if (resourcePath.startsWith('/vdp/')) {
+        resourcePath = resourcePath.substring(5);
+      }
+      // Extract query string WITHOUT the leading '?'
+      let queryParams = urlObj.search ? urlObj.search.substring(1) : '';
+      const apiKeyParam = `apiKey=${settings.apiKey}`;
+      if (queryParams) {
+        queryParams += '&' + apiKeyParam;
+      } else {
+        queryParams = apiKeyParam;
+      }
+      // Prepare post body for hash calculation
+      const postBody = method.toUpperCase() === 'POST' ? (payload ? JSON.stringify(payload) : '') : '';
+      // Create message string: timestamp + resource_path + query_string + request_body
+      const message = timestamp + resourcePath + queryParams + postBody;
+      // Generate HMAC-SHA256 hash: SHA256HMAC(shared_secret, message)
+      const crypto = require('crypto');
+      const hashString = crypto.createHmac('SHA256', settings.sharedSecret)
+        .update(message)
+        .digest('hex');
+      // Create X-Pay-Token: "xv2:" + timestamp + ":" + SHA256HMAC(shared_secret, message)
+      const xPayToken = `xv2:${timestamp}:${hashString}`;
+      // For the actual request, set the query string WITH the leading '?'
+      urlObj.search = '?' + queryParams;
+      finalUrl = urlObj.toString();
+      // Add X-Pay-Token to headers (using uppercase as per Visa specifications)
+      requestHeaders['X-PAY-TOKEN'] = xPayToken;
+      // Remove Authorization header for X-Pay-Token (not needed)
+      delete requestHeaders['Authorization'];
+    } else {
+      // Mutual Auth: add Authorization header
+      const credentials = createBase64Credentials(settings.userId, settings.password);
+      requestHeaders['Authorization'] = `Basic ${credentials}`;
+    }
+
     try {
       // Make request to Visa API
       const response = await axios({
         method: method.toLowerCase(),
-        url: apiUrl,
+        url: finalUrl,
         headers: requestHeaders,
         data: requestData,
         httpsAgent
@@ -351,12 +395,10 @@ app.post('/api/visa/transaction', async (req, res) => {
       if (axiosError.response) {
         const errorData = axiosError.response.data;
         let decryptedData = null;
-
         // Try to decrypt the error response
         if (errorData && errorData.encData) {
           decryptedData = await decryptResponse(errorData);
         }
-
         // Format the response
         const formattedResponse = {
           error: 'Visa API request failed',
@@ -367,7 +409,6 @@ app.post('/api/visa/transaction', async (req, res) => {
           isEncrypted: !!errorData.encData,
           headers: axiosError.response.headers
         };
-
         return res.status(axiosError.response.status).json(formattedResponse);
       } else if (axiosError.request) {
         return res.status(500).json({

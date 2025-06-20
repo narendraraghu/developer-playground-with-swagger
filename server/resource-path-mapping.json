@@ -1,0 +1,6 @@
+{
+  "/visadirect/": "fundstransfer/",
+  "/vdp/": "",
+  "/visadirect-connect/v1/payouts/validate": "v1/payouts/validate",
+  "/visadirect-connect/": ""
+} 

@@ -6,6 +6,7 @@ const path = require('path');
 const cors = require('cors');
 const { createPublicKey, createPrivateKey } = require('crypto');
 const errorMapping = require('./error-mapping.json');
+const resourcePathMapping = require('./resource-path-mapping.json');
 
 // Try to load jose module, but don't fail if it's not available
 let jose;
@@ -105,29 +106,49 @@ function validateKeyFormat(key, type) {
 
 // Helper function to save settings
 function saveSettings(settings) {
-  // Validate required fields
-  const requiredFields = [
-    'sslServerCert', 'sslClientKey',
-    'userId', 'password', 'keyId'
-  ];
+  // Check authentication method
+  const authMethod = settings.authMethod || 'mutualAuth';
+  
+  if (authMethod === 'mutualAuth') {
+    // Validate required fields for Mutual Authentication
+    const requiredMutualAuthFields = [
+      'sslServerCert', 'sslClientKey', 'userId', 'password'
+    ];
 
-  for (const field of requiredFields) {
-    if (!settings[field]) {
-      throw new Error(`Missing required field: ${field}`);
+    for (const field of requiredMutualAuthFields) {
+      if (!settings[field]) {
+        throw new Error(`Missing required field for Mutual Authentication: ${field}`);
+      }
+    }
+
+    // Validate certificate and key formats for Mutual Authentication
+    validateKeyFormat(settings.sslServerCert, 'sslServerCert');
+    validateKeyFormat(settings.sslClientKey, 'sslClientKey');
+  } else if (authMethod === 'xpayToken') {
+    // Validate required fields for X-Pay-Token Authentication
+    const requiredXPayTokenFields = [
+      'apiKey', 'sharedSecret', 'resourcePath'
+    ];
+
+    for (const field of requiredXPayTokenFields) {
+      if (!settings[field]) {
+        throw new Error(`Missing required field for X-Pay-Token Authentication: ${field}`);
+      }
     }
   }
 
-  // Validate certificate and key formats
-  validateKeyFormat(settings.sslServerCert, 'sslServerCert');
-  validateKeyFormat(settings.sslClientKey, 'sslClientKey');
-
-  // Validate MLE keys if provided and jose is available
+  // Validate MLE keys if provided and jose is available (applies to both auth methods)
   if (jose) {
     if (settings.mleServerKey) {
       validateKeyFormat(settings.mleServerKey, 'mleServerKey');
     }
     if (settings.mleClientKey) {
       validateKeyFormat(settings.mleClientKey, 'mleClientKey');
+    }
+    
+    // If MLE keys are provided, keyId is required
+    if ((settings.mleServerKey || settings.mleClientKey) && !settings.keyId) {
+      throw new Error('MLE Key ID is required when MLE keys are provided');
     }
   }
 
@@ -377,7 +398,7 @@ app.post('/api/visa/proxy', async (req, res) => {
   console.log('Body:', JSON.stringify(req.body, null, 2));
 
   try {
-    const { url, method, payload, headers: customHeaders = {} } = req.body;
+    const { url, method, payload, headers: customHeaders = {}, authMethod = 'mutualAuth' } = req.body;
     
     // Load settings
     const settings = loadSettings();
@@ -386,35 +407,201 @@ app.post('/api/visa/proxy', async (req, res) => {
       return res.status(400).json({ error: 'Settings not found. Please configure settings first.' });
     }
 
-    // Create base64 credentials
-    const credentials = createBase64Credentials(settings.userId, settings.password);
-
     // Configure HTTPS agent
     const httpsAgent = createHttpsAgent(settings);
 
-    // Prepare request headers
-    const requestHeaders = {
+    // Prepare request headers based on authentication method
+    let requestHeaders = {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
-      'Authorization': `Basic ${credentials}`,
       'User-Agent': 'Visa API Client',
       'Host': new URL(url).host,
-      'keyId': settings.keyId,
       ...customHeaders // Merge custom headers
     };
 
+    let finalUrl = url;
     let requestData = payload; // Start with the raw payload
+    let encBody = null; // For MLE+X-Pay-Token
 
-    // Encrypt payload if it's a POST request and MLE is available and configured
-    if (method.toUpperCase() === 'POST' && jose && settings.mleServerKey && settings.keyId) {
+    if (authMethod === 'mutualAuth') {
+      // Mutual Authentication - use Basic Auth with userId/password
+      if (!settings.userId || !settings.password) {
+        return res.status(400).json({ 
+          error: 'Mutual Authentication requires User ID and Password. Please configure settings first.' 
+        });
+      }
+      
+      const credentials = createBase64Credentials(settings.userId, settings.password);
+      requestHeaders['Authorization'] = `Basic ${credentials}`;
+      
+      if (settings.keyId) {
+        requestHeaders['keyId'] = settings.keyId;
+      }
+    } else if (authMethod === 'xpayToken') {
+      // X-Pay-Token Authentication - use API Key and Shared Secret
+      if (!settings.apiKey || !settings.sharedSecret || !settings.resourcePath) {
+        return res.status(400).json({ 
+          error: 'X-Pay-Token Authentication requires API Key, Shared Secret, and Resource Path. Please configure settings first.' 
+        });
+      }
+      
+      console.log('\n=== X-Pay-Token Authentication Setup ===');
+      console.log('API Key:', settings.apiKey);
+      console.log('Shared Secret length:', settings.sharedSecret ? settings.sharedSecret.length : 0);
+      console.log('Resource Path:', settings.resourcePath);
+      
+      // Generate X-Pay-Token according to Visa specifications
+      const timestamp = Math.floor(Date.now() / 1000);
+      
+      // Ensure urlObj is defined
+      const urlObj = new URL(url);
+      // Extract resource path using mapping file if available
+      let resourcePath = urlObj.pathname;
+      // Try to match the base path from the mapping file
+      const mappingKeys = Object.keys(resourcePathMapping);
+      let matched = false;
+      for (const base of mappingKeys) {
+        if (resourcePath.startsWith(base)) {
+          resourcePath = resourcePathMapping[base] + resourcePath.substring(base.length);
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        // Fallback to previous logic
+        if (resourcePath.startsWith('/vdp/')) {
+          resourcePath = resourcePath.substring(5);
+        } else if (resourcePath.startsWith('/visadirect/')) {
+          resourcePath = resourcePath.substring('/visadirect/'.length);
+        }
+      }
+      // Extract query string WITHOUT the leading '?', and sort params lexicographically
+      let queryParams = '';
+      if (urlObj.search && urlObj.search.length > 1) {
+        // Remove leading '?', split, sort, and join
+        let params = urlObj.search.substring(1).split('&').filter(Boolean);
+        params.push(`apiKey=${settings.apiKey}`); // Always add apiKey
+        params = params.map(p => p.split('='));
+        params.sort((a, b) => a[0].localeCompare(b[0]));
+        queryParams = params.map(p => p.join('=')).join('&');
+      } else {
+        queryParams = `apiKey=${settings.apiKey}`;
+      }
+      // --- MLE + X-Pay-Token special handling ---
+      let postBody = '';
+      if (method.toUpperCase() === 'POST' && jose && settings.mleServerKey && settings.keyId) {
+        console.log('\nAttempting to encrypt payload for X-Pay-Token hash and request...');
+        try {
+          // Always use minified JSON for encryption
+          const minifiedPayload = JSON.stringify(typeof payload === 'string' ? JSON.parse(payload) : payload);
+          const jweString = await encryptPayload(minifiedPayload, settings.mleServerKey, settings.keyId);
+          encBody = JSON.stringify({ encData: JSON.parse(jweString).encData });
+          postBody = encBody;
+          requestData = encBody;
+          console.log('Payload encrypted and encBody prepared for hash and request.');
+        } catch (encryptError) {
+          console.error('Payload encryption failed:', encryptError);
+          return res.status(500).json({ 
+            error: 'Failed to encrypt payload for POST request',
+            details: encryptError.message
+          });
+        }
+      } else if (method.toUpperCase() === 'POST') {
+        // No MLE, just use minified JSON
+        postBody = JSON.stringify(typeof payload === 'string' ? JSON.parse(payload) : payload);
+        requestData = postBody;
+      }
+      // For GET, postBody remains ''
+      // Create message string: timestamp + resource_path + query_string + request_body
+      const message = timestamp + resourcePath + queryParams + postBody;
+      // Generate HMAC-SHA256 hash: SHA256HMAC(shared_secret, message)
+      const crypto = require('crypto');
+      const hashString = crypto.createHmac('SHA256', settings.sharedSecret)
+        .update(message)
+        .digest('hex');
+      // Create X-Pay-Token: "xv2:" + timestamp + ":" + SHA256HMAC(shared_secret, message)
+      const xPayToken = `xv2:${timestamp}:${hashString}`;
+      // For the actual request, set the query string WITH the leading '?'
+      urlObj.search = '?' + queryParams;
+      finalUrl = urlObj.toString();
+      
+      console.log('\n=== X-Pay-Token Generation (Visa Specification) ===');
+      console.log('HMAC Input (shared_secret):', settings.sharedSecret.substring(0, 10) + '...');
+      console.log('HMAC Input (message):', message);
+      console.log('HMAC Output (hash):', hashString);
+      console.log('HMAC Output length:', hashString.length);
+      console.log('Final X-Pay-Token:', xPayToken);
+      console.log('X-Pay-Token length:', xPayToken.length);
+      
+      // Validate X-Pay-Token format
+      const tokenParts = xPayToken.split(':');
+      if (tokenParts.length !== 3) {
+        console.error('ERROR: X-Pay-Token format is incorrect. Expected 3 parts, got:', tokenParts.length);
+        return res.status(500).json({ 
+          error: 'X-Pay-Token format is incorrect',
+          details: 'Token should be in format: xv2:timestamp:hash'
+        });
+      }
+      
+      if (tokenParts[0] !== 'xv2') {
+        console.error('ERROR: X-Pay-Token version is incorrect. Expected "xv2", got:', tokenParts[0]);
+        return res.status(500).json({ 
+          error: 'X-Pay-Token version is incorrect',
+          details: 'Token should start with "xv2:"'
+        });
+      }
+      
+      console.log('X-Pay-Token validation passed');
+      console.log('Token parts:', tokenParts);
+      
+      // Add X-Pay-Token to headers (using uppercase as per Visa specifications)
+      requestHeaders['X-PAY-TOKEN'] = xPayToken;
+      
+      console.log('\n=== Request Headers for X-Pay-Token ===');
+      console.log('Headers:', JSON.stringify(requestHeaders, null, 2));
+      
+      // Additional debugging for potential issues
+      console.log('\n=== Additional Debug Info ===');
+      console.log('Current time (ISO):', new Date().toISOString());
+      console.log('Current time (Unix):', Math.floor(Date.now() / 1000));
+      console.log('Token timestamp:', timestamp);
+      console.log('Time difference:', Math.floor(Date.now() / 1000) - timestamp);
+      
+      // Check if shared secret might be the issue
+      console.log('Shared Secret first 10 chars:', settings.sharedSecret.substring(0, 10) + '...');
+      console.log('Shared Secret last 10 chars:', '...' + settings.sharedSecret.substring(settings.sharedSecret.length - 10));
+      console.log('Shared Secret length:', settings.sharedSecret.length);
+      console.log('Shared Secret contains spaces:', settings.sharedSecret.includes(' '));
+      console.log('Shared Secret contains newlines:', settings.sharedSecret.includes('\n'));
+      console.log('Shared Secret contains carriage returns:', settings.sharedSecret.includes('\r'));
+      
+      // Check API key
+      console.log('API Key first 10 chars:', settings.apiKey.substring(0, 10) + '...');
+      console.log('API Key last 10 chars:', '...' + settings.apiKey.substring(settings.apiKey.length - 10));
+      console.log('API Key length:', settings.apiKey.length);
+      console.log('API Key contains spaces:', settings.apiKey.includes(' '));
+      console.log('API Key contains newlines:', settings.apiKey.includes('\n'));
+      
+      // Test HMAC with a known value to verify crypto is working
+      const testMessage = 'test';
+      const testHash = crypto.createHmac('SHA256', settings.sharedSecret)
+        .update(testMessage)
+        .digest('hex');
+      console.log('Test HMAC (test message):', testHash.substring(0, 16) + '...');
+      
+      // Remove Authorization header for X-Pay-Token (not needed)
+      delete requestHeaders['Authorization'];
+    }
+
+    // If not POST+MLE+X-Pay-Token, but POST+MLE+mutualAuth, handle encryption here
+    if (method.toUpperCase() === 'POST' && jose && settings.mleServerKey && settings.keyId && !(authMethod === 'xpayToken')) {
       console.log('\nAttempting to encrypt payload...');
       try {
-        requestData = await encryptPayload(payload, settings.mleServerKey, settings.keyId);
+        const minifiedPayload = JSON.stringify(typeof payload === 'string' ? JSON.parse(payload) : payload);
+        requestData = await encryptPayload(minifiedPayload, settings.mleServerKey, settings.keyId);
         console.log('Payload encrypted successfully.');
       } catch (encryptError) {
         console.error('Payload encryption failed:', encryptError);
-        // Decide how to handle encryption failure: stop or send unencrypted?
-        // For now, we'll stop and return an error.
         return res.status(500).json({ 
           error: 'Failed to encrypt payload for POST request',
           details: encryptError.message
@@ -423,8 +610,9 @@ app.post('/api/visa/proxy', async (req, res) => {
     }
 
     console.log('\n=== Proxying Request to Visa API ===');
-    console.log('URL:', url);
+    console.log('URL:', finalUrl);
     console.log('Method:', method);
+    console.log('Auth Method:', authMethod);
     console.log('Headers:', requestHeaders); // Log headers being sent
     console.log('Request Data (after potential encryption):', requestData); // Log payload being sent
     if (method.toUpperCase() === 'POST' && requestData !== payload) {
@@ -433,9 +621,10 @@ app.post('/api/visa/proxy', async (req, res) => {
 
     try {
       // Make request to Visa API
+      console.log('\n=== Making Request to Visa API ===');
       const response = await axios({
         method: method.toLowerCase(),
-        url: url,
+        url: finalUrl,
         headers: requestHeaders,
         data: requestData, // Use the potentially encrypted payload
         httpsAgent,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './App.css';
 import ApiPanel from './components/ApiPanel';
 import SettingsPanel from './components/SettingsPanel';
@@ -19,6 +19,17 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [mleAvailable, setMleAvailable] = useState(false);
   const [selectedEnvironment, setSelectedEnvironment] = useState('sandbox');
+  
+  // Add authentication method state with persistence
+  const [authMethod, setAuthMethod] = useState(() => {
+    const saved = localStorage.getItem('authMethod');
+    return saved || 'mutualAuth';
+  });
+
+  // Save auth method to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('authMethod', authMethod);
+  }, [authMethod]);
 
   const environments = {
     sandbox: 'https://sandbox.api.visa.com',
@@ -76,7 +87,8 @@ function App() {
         body: JSON.stringify({
           url,
           method,
-          payload: method !== 'GET' ? payload : undefined
+          payload: method !== 'GET' ? payload : undefined,
+          authMethod // Pass the authentication method to the backend
         })
       });
 
@@ -197,6 +209,8 @@ function App() {
             selectedEnvironment={selectedEnvironment}
             setSelectedEnvironment={setSelectedEnvironment}
             environments={environments}
+            authMethod={authMethod}
+            setAuthMethod={setAuthMethod}
           />
         )}
         
@@ -211,7 +225,9 @@ function App() {
           
           <ApiPanel
             activeApiUrl={activeApiUrl}
+            setActiveApiUrl={setActiveApiUrl}
             activeMethod={activeMethod}
+            setActiveMethod={setActiveMethod}
             activePayload={activePayload}
             activeResponse={activeResponse}
             activeError={activeError}
@@ -219,6 +235,7 @@ function App() {
             onPayloadChange={handlePayloadChange}
             loading={loading}
             settingsSaved={settingsSaved}
+            authMethod={authMethod}
           />
         </div>
         {error && !activeError && (

@@ -11,11 +11,14 @@ const ApiPanel = ({
   handleSendRequest, // Use the centralized send handler from App.js
   settingsSaved,
   activeApiUrl,
+  setActiveApiUrl,
   activeMethod,
+  setActiveMethod,
   activePayload,
   activeResponse,
   activeError,
-  onPayloadChange // Receive the new prop
+  onPayloadChange, // Receive the new prop
+  authMethod
 }) => {
 
   console.log('ApiPanel activeMethod:', activeMethod);
@@ -35,6 +38,7 @@ const ApiPanel = ({
             <select
               className={`method-select is-${activeMethod.toLowerCase()}`}
               value={activeMethod}
+              onChange={(e) => setActiveMethod(e.target.value)}
             >
               <option value="GET">GET</option>
               <option value="POST">POST</option>
@@ -45,8 +49,8 @@ const ApiPanel = ({
               type="text"
               className="api-url-input"
               value={activeApiUrl}
+              onChange={(e) => setActiveApiUrl(e.target.value)}
               placeholder="Enter API URL"
-              readOnly
             />
           </div>
           <motion.button
@@ -86,86 +90,33 @@ const ApiPanel = ({
           <div className="response-section">
             <div className="section-header">
               <FaExchangeAlt /> Response
-              {activeResponse && activeResponse.status && (
+              {activeResponse && (
                 <span className={`status-badge status-${activeResponse.status}`}>
-                  {activeResponse.status} {activeResponse.status >= 400 ? 'Error' : 'OK'}
+                  {activeResponse.status} {activeResponse.status === 200 ? 'OK' : 'Error'}
                 </span>
               )}
             </div>
-
-            {activeResponse && activeResponse.status >= 400 ? (
-              <div className="error-response-container">
-                {activeResponse.errorCode && (
-                  <div className="error-detail-item">
-                    <span className="detail-label">Error Code:</span>
-                    <span className="detail-value">{activeResponse.errorCode}</span>
-                  </div>
-                )}
-
-                {activeResponse.mappedError?.description && (
-                   <div className="error-detail-item">
-                     <span className="detail-label">Description:</span>
-                     <span className="detail-value">{activeResponse.mappedError.description}</span>
-                   </div>
-                )}
-
-                {activeResponse.mappedError?.troubleshooting && (
-                   <div className="error-detail-item">
-                     <span className="detail-label">Troubleshooting:</span>
-                     <span className="detail-value">{activeResponse.mappedError.troubleshooting}</span>
-                   </div>
-                )}
-
-                {activeResponse.headers && activeResponse.headers['x-correlation-id'] && (
-                   <div className="error-detail-item">
-                     <span className="detail-label">CR-ID:</span>
-                     <span className="detail-value">{activeResponse.headers['x-correlation-id']}</span>
-                   </div>
-                )}
-
-                {activeResponse.data !== undefined && (
-                   <div className="raw-error-data-section">
-                     <h4>Raw Response Data</h4>
-                     <pre className="error-raw-data">{JSON.stringify(activeResponse.data, null, 2) || 'No raw data'}</pre>
-                   </div>
-                )}
-
-              </div>
-            ) : (
-              activeResponse && (
+            <div className="api-section">
+              {activeError ? (
+                <ErrorDisplay 
+                  error={activeError} 
+                  response={activeResponse}
+                  authMethod={authMethod}
+                />
+              ) : activeResponse ? (
                 <div className="response-container">
-                  <div className="response-body">
-                    <h4>Response Body</h4>
-                    <pre className="response-data">
-                      {JSON.stringify(activeResponse.data, null, 2) || 'No response data'}
-                    </pre>
-                  </div>
-                  {activeResponse.headers && (
-                    <div className="response-headers">
-                      <div className="header-item">
-                        <span className="header-name">CR-ID:</span>
-                        <span className="header-value">{activeResponse.headers['x-correlation-id'] || 'Not available'}</span>
-                      </div>
-                    </div>
-                  )}
+                  <pre className="response-data">
+                    {JSON.stringify(activeResponse.data, null, 2)}
+                  </pre>
                 </div>
-              )
-            )}
-
-            {!loading && !activeResponse && !activeError && (
-              <div className="no-response">
-                <p>Send a request to see the response.</p>
-              </div>
-            )}
-            {loading && (
-              <div className="loading-response">
-                <p>Loading...</p>
-              </div>
-            )}
+              ) : (
+                <div className="no-response-message">
+                  No response yet. Send a request to see the response.
+                </div>
+              )}
+            </div>
           </div>
-
         </div>
-
       </form>
     </div>
   );

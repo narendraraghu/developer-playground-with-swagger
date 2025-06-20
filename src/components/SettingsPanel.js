@@ -15,7 +15,9 @@ const SettingsPanel = ({
   setShowSettings,
   selectedEnvironment,
   setSelectedEnvironment,
-  environments
+  environments,
+  authMethod,
+  setAuthMethod
 }) => {
   const [settings, setSettings] = useState({
     userId: '',
@@ -34,7 +36,6 @@ const SettingsPanel = ({
     sharedSecret: '',
     resourcePath: '',
   });
-  const [authMethod, setAuthMethod] = useState('mutualAuth');
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
 
   // File name states
@@ -69,7 +70,7 @@ const SettingsPanel = ({
             sharedSecret: data.settings.sharedSecret || '',
             resourcePath: data.settings.resourcePath || '',
           });
-          setAuthMethod(data.authMethod || 'mutualAuth');
+          // Use the authMethod from props (which is persisted in localStorage)
           setSettingsSaved(true);
           if(data.settings.mleServerKey) setMleServerKeyFile('file loaded');
           if(data.settings.mleClientKey) setMleClientKeyFile('file loaded');
@@ -157,14 +158,9 @@ const SettingsPanel = ({
         .map(([_, label]) => label));
     }
 
-    if (mleAvailable) {
-      const requiredMleFields = {
-        keyId: 'MLE Key ID',
-      };
-      missingFields = missingFields.concat(Object.entries(requiredMleFields)
-        .filter(([key]) => !settings[key])
-        .map(([_, label]) => label));
-
+    // Only require MLE fields if MLE keys are actually provided
+    if (mleAvailable && (settings.mleServerKey || settings.mleClientKey)) {
+      if (!settings.keyId) missingFields.push('MLE Key ID');
       if (!settings.mleServerKey) missingFields.push('Visa MLE Public Key file');
       if (!settings.mleClientKey) missingFields.push('Your MLE Private Key file');
     }
@@ -200,32 +196,20 @@ const SettingsPanel = ({
         })
       });
 
-      let data;
-      const contentType = response.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        data = await response.json();
+      if (response.ok) {
+        setSettingsSaved(true);
+        setShowSuccessMessage(true);
+        setTimeout(() => setShowSuccessMessage(false), 3000);
+        setError(null);
       } else {
-        const text = await response.text();
-        throw new Error(`Server returned non-JSON response: ${text.substring(0, 200)}...`);
-      }
-
-      if (!response.ok) {
-        throw new Error(data.details || data.error || 'Failed to save settings');
-      }
-
-      if (data.mleAvailable !== undefined) {
-        setMleAvailable(data.mleAvailable);
-      }
-
-      setSettingsSaved(true);
-      setShowSuccessMessage(true);
-      setTimeout(() => {
+        const errorData = await response.json();
+        setError(errorData.error || 'Failed to save settings');
+        setSettingsSaved(false);
         setShowSuccessMessage(false);
-      }, 3000);
-      setShowSettings(false);
+      }
     } catch (error) {
-      console.error('Failed to save settings:', error);
-      setError(error.message);
+      console.error('Error saving settings:', error);
+      setError('Failed to save settings. Please try again.');
       setSettingsSaved(false);
       setShowSuccessMessage(false);
     } finally {
@@ -280,8 +264,8 @@ const SettingsPanel = ({
       style={{ pointerEvents: showSettings ? 'auto' : 'none' }}
     >
       <div className="settings-header-with-toggle">
-        <h2>Settings</h2>
         <div className="auth-method-toggle-container">
+          <span>Use X-Pay-Token Authentication</span>
           <label className="switch">
             <input
               type="checkbox"
@@ -290,7 +274,6 @@ const SettingsPanel = ({
             />
             <span className="slider round"></span>
           </label>
-          <span>Use X-Pay-Token Authentication</span>
         </div>
       </div>
 
@@ -311,6 +294,10 @@ const SettingsPanel = ({
             <div className="section-header">
               <FaKey /> X-Pay-Token Configuration
             </div>
+            <p className="auth-description">
+              X-Pay-Token authentication uses your API Key, Shared Secret, and Resource Path to generate a secure token for API requests. 
+              The token is automatically generated and included in the X-PAY-TOKEN header.
+            </p>
             <div className="form-group">
               <label>API Key</label>
               <input
@@ -345,185 +332,163 @@ const SettingsPanel = ({
         {/* Message Level Encryption Settings */}
         {mleAvailable && (
           <div className="settings-section">
-            <h3><FaShieldAlt /> Message Level Encryption (MLE)</h3>
-            <p>Configure keys for encrypting and decrypting sensitive data.</p>
-            
-            {/* MLE Key ID Input (Moved Up) */}
-            <div className="input-group">
-              <label htmlFor="keyId">MLE Key ID:</label>
+            <div className="section-header">
+              <FaShieldAlt /> Message Level Encryption (MLE)
+            </div>
+            <div className="form-group">
+              <label>MLE Key ID</label>
               <input
                 type="text"
-                id="keyId"
                 value={settings.keyId}
                 onChange={(e) => setSettings(prev => ({ ...prev, keyId: e.target.value }))}
-                placeholder="Enter your MLE Key ID"
+                required={mleAvailable}
               />
             </div>
-
-            <div className="upload-container">
-              <div className="file-upload-group">
-                {/* File label */}
-                <span className="file-upload-label">Visa MLE Public Key:</span>
-                
-                {/* Choose file button */}
-                <label htmlFor="mle-server-key-upload" className="file-upload-choice">
-                  Choose file
-                </label>
-                
-                {/* File status */}
-                <span className="file-name">
-                  {mleServerKeyFile || 'No key chosen'}
-                </span>
-                {mleServerKeySuccess && <span className="upload-success">Uploaded successfully</span>}
-                
+            <div className="form-group">
+              <label>Visa MLE Public Key</label>
+              <div className="file-input-container">
                 <input
                   type="file"
                   accept=".pem,.cer,.crt"
                   onChange={(e) => handleFileChange(e, 'mleServerKey')}
-                  style={{ display: 'none' }}
-                  id="mle-server-key-upload"
+                  className="file-input"
                 />
+                <span className="file-name">{mleServerKeyFile || 'Choose file'}</span>
               </div>
-
-              <div className="file-upload-group">
-                {/* File label */}
-                <span className="file-upload-label">Your MLE Private Key:</span>
-
-                {/* Choose file button */}
-                <label htmlFor="mle-client-key-upload" className="file-upload-choice">
-                  Choose file
-                </label>
-
-                {/* File status */}
-                <span className="file-name">
-                  {mleClientKeyFile || 'No key chosen'}
-                </span>
-                {mleClientKeySuccess && <span className="upload-success">Uploaded successfully</span>}
-
+              {mleServerKeySuccess && (
+                <div className="success-message">MLE server key loaded successfully!</div>
+              )}
+            </div>
+            <div className="form-group">
+              <label>Your MLE Private Key</label>
+              <div className="file-input-container">
                 <input
                   type="file"
                   accept=".pem,.key"
                   onChange={(e) => handleFileChange(e, 'mleClientKey')}
-                  style={{ display: 'none' }}
-                  id="mle-client-key-upload"
+                  className="file-input"
                 />
+                <span className="file-name">{mleClientKeyFile || 'Choose file'}</span>
               </div>
+              {mleClientKeySuccess && (
+                <div className="success-message">MLE client key loaded successfully!</div>
+              )}
             </div>
           </div>
         )}
 
-        {/* Environment Selection */}
+        {/* Environment Settings */}
         <div className="settings-section">
-          <h3><FaGlobe /> Environment</h3>
+          <div className="section-header">
+            <FaGlobe /> Environment Configuration
+          </div>
           <div className="environment-selector">
-            <label htmlFor="environment-select">Select Environment:</label>
+            <label>Environment</label>
             <select
-              id="environment-select"
               value={selectedEnvironment}
               onChange={(e) => setSelectedEnvironment(e.target.value)}
             >
-              {Object.keys(environments).map(env => (
-                <option key={env} value={env}>{env.charAt(0).toUpperCase() + env.slice(1)}</option>
-              ))}
+              <option value="sandbox">Sandbox</option>
+              <option value="certification">Certification</option>
+              <option value="production">Production</option>
             </select>
           </div>
-          <p>Base URL: {environments[selectedEnvironment]}</p>
-
-          {/* Proxy Settings (Moved Here) */}
-          <div className="settings-section nested">
-              <h4><FaNetworkWired /> Proxy Settings</h4>
-              <div className="input-group">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={settings.useProxy}
-                    onChange={(e) => setSettings(prev => ({ ...prev, useProxy: e.target.checked }))}
-                  />
-                  Use Proxy
-                </label>
-              </div>
-
-              {settings.useProxy && (
-                <>
-                  <div className="input-group">
-                    <label htmlFor="proxyHost">Proxy Host:</label>
-                    <input
-                      type="text"
-                      id="proxyHost"
-                      value={settings.proxyHost}
-                      onChange={(e) => setSettings(prev => ({ ...prev, proxyHost: e.target.value }))}
-                    />
-                  </div>
-                  <div className="input-group">
-                    <label htmlFor="proxyPort">Proxy Port:</label>
-                    <input
-                      type="number"
-                      id="proxyPort"
-                      value={settings.proxyPort}
-                      onChange={(e) => setSettings(prev => ({ ...prev, proxyPort: e.target.value }))}
-                    />
-                  </div>
-                  <div className="input-group">
-                    <label htmlFor="proxyUsername">Proxy Username (Optional):</label>
-                    <input
-                      type="text"
-                      id="proxyUsername"
-                      value={settings.proxyUsername}
-                      onChange={(e) => setSettings(prev => ({ ...prev, proxyUsername: e.target.value }))}
-                    />
-                  </div>
-                  <div className="input-group">
-                    <label htmlFor="proxyPassword">Proxy Password (Optional):</label>
-                    <input
-                      type="password"
-                      id="proxyPassword"
-                      value={settings.proxyPassword}
-                      onChange={(e) => setSettings(prev => ({ ...prev, proxyPassword: e.target.value }))}
-                    />
-                  </div>
-                </>
-              )}
+          <div className="environment-selector">
+            <label>Base URL</label>
+            <input
+              type="text"
+              value={environments[selectedEnvironment]}
+              readOnly
+              className="environment-url"
+            />
           </div>
-
         </div>
 
+        {/* Proxy Settings */}
+        <div className="settings-section">
+          <div className="section-header">
+            <FaNetworkWired /> Proxy Configuration
+          </div>
+          <div className="form-group">
+            <label>
+              <input
+                type="checkbox"
+                checked={settings.useProxy}
+                onChange={(e) => setSettings(prev => ({ ...prev, useProxy: e.target.checked }))}
+              />
+              Use Proxy
+            </label>
+          </div>
+          {settings.useProxy && (
+            <div className="settings-section nested">
+              <div className="input-group">
+                <label>Proxy Host</label>
+                <input
+                  type="text"
+                  value={settings.proxyHost}
+                  onChange={(e) => setSettings(prev => ({ ...prev, proxyHost: e.target.value }))}
+                  required={settings.useProxy}
+                />
+              </div>
+              <div className="input-group">
+                <label>Proxy Port</label>
+                <input
+                  type="number"
+                  value={settings.proxyPort}
+                  onChange={(e) => setSettings(prev => ({ ...prev, proxyPort: e.target.value }))}
+                  required={settings.useProxy}
+                />
+              </div>
+              <div className="input-group">
+                <label>Proxy Username (Optional)</label>
+                <input
+                  type="text"
+                  value={settings.proxyUsername}
+                  onChange={(e) => setSettings(prev => ({ ...prev, proxyUsername: e.target.value }))}
+                />
+              </div>
+              <div className="input-group">
+                <label>Proxy Password (Optional)</label>
+                <input
+                  type="password"
+                  value={settings.proxyPassword}
+                  onChange={(e) => setSettings(prev => ({ ...prev, proxyPassword: e.target.value }))}
+                />
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Action Buttons */}
       <div className="settings-buttons">
         <button
-          className="settings-button"
+          type="button"
           onClick={handleSaveSettings}
           disabled={loading}
+          className="settings-button"
         >
           {loading ? 'Saving...' : 'Save Settings'}
         </button>
         <button
-          className="settings-button reset"
+          type="button"
           onClick={handleResetSettings}
-          disabled={loading}
+          className="settings-button reset"
         >
-          Reset Settings
+          Reset
         </button>
         <button
-          className="settings-button close"
+          type="button"
           onClick={() => setShowSettings(false)}
-          disabled={loading}
+          className="settings-button close"
         >
           Close
         </button>
       </div>
 
       {showSuccessMessage && (
-        <motion.div
-          className="save-success-message"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 20 }}
-          transition={{ duration: 0.3 }}
-        >
+        <div className="save-success-message">
           Settings saved successfully!
-        </motion.div>
+        </div>
       )}
     </motion.div>
   );
